@@ -125,23 +125,77 @@ def load_keras_model():
         return None
 
 def load_sklearn_model():
+    """Carga el modelo de Scikit-Learn con manejo de versiones"""
     try:
-        if os.path.exists('sklearn_model.pkl'):
-            with open('sklearn_model.pkl', 'rb') as f:
-                model = pickle.load(f)
-            st.success("✅ Modelo Sklearn cargado")
-            return model
-        else:
-            st.warning("⚠️ Usando modelo sklearn dummy")
+        import os
+        import numpy as np
+        
+        # Fijar semilla para compatibilidad
+        np.random.seed(42)
+        
+        # Buscar archivo de modelo sklearn
+        sklearn_files = ['sklearn_model.pkl', 'sklearn_model.joblib', 'model_sklearn.pkl']
+        
+        for file in sklearn_files:
+            if os.path.exists(file):
+                st.info(f"Cargando modelo sklearn desde {file}...")
+                try:
+                    # Método 1: Intentar cargar normalmente
+                    if file.endswith('.joblib'):
+                        model = joblib.load(file)
+                    else:
+                        with open(file, 'rb') as f:
+                            model = pickle.load(f)
+                    
+                    # Verificar que el modelo funciona
+                    test_X = np.random.rand(1, 31)
+                    if hasattr(model, 'predict_proba'):
+                        model.predict_proba(test_X)
+                    else:
+                        model.predict(test_X)
+                    
+                    st.success(f"✅ Modelo Sklearn cargado desde {file}")
+                    return model
+                    
+                except Exception as e:
+                    st.warning(f"Error con {file}: {str(e)[:100]}")
+                    continue
+        
+        # Si no hay modelo, crear uno dummy
+        st.warning("⚠️ No se encontró modelo sklearn. Creando modelo dummy...")
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.pipeline import Pipeline
+        
+        # Usar versiones compatibles
+        dummy_model = Pipeline([
+            ('scaler', StandardScaler()),
+            ('classifier', RandomForestClassifier(n_estimators=10, random_state=42))
+        ])
+        
+        # Entrenar con datos dummy
+        dummy_X = np.random.rand(100, 31)
+        dummy_y = np.random.randint(0, 2, 100)
+        dummy_model.fit(dummy_X, dummy_y)
+        
+        st.info("📊 Modelo sklearn dummy creado (para pruebas)")
+        return dummy_model
+        
+    except Exception as e:
+        st.error(f"❌ Error cargando modelo sklearn: {str(e)}")
+        
+        # Último recurso: modelo dummy simple
+        try:
             from sklearn.ensemble import RandomForestClassifier
-            dummy = RandomForestClassifier(n_estimators=10)
+            dummy_model = RandomForestClassifier(n_estimators=5, random_state=42)
             dummy_X = np.random.rand(100, 31)
             dummy_y = np.random.randint(0, 2, 100)
-            dummy.fit(dummy_X, dummy_y)
-            return dummy
-    except Exception as e:
-        st.error(f"Error sklearn: {e}")
-        return None
+            dummy_model.fit(dummy_X, dummy_y)
+            st.warning("⚠️ Usando modelo sklearn dummy simple")
+            return dummy_model
+        except:
+            st.warning("⚠️ No se pudo crear modelo sklearn, se usará solo Keras")
+            return None
 
 def get_model_info():
     return {
