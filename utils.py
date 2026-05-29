@@ -137,13 +137,25 @@ def preprocess_input(data_dict: dict) -> np.ndarray:
 # LOADERS - VERSIÓN CORREGIDA
 # =============================================================================
 def load_keras_model():
-    """Carga modelo Keras desde archivo .keras"""
+    """Carga modelo Keras usando archivos limpios (compatible con TF 2.15)"""
     try:
-        # Buscar el modelo en diferentes formatos
-        if os.path.exists('keras_model.keras'):
-            st.info("Cargando modelo desde keras_model.keras...")
-            model = tf.keras.models.load_model('keras_model.keras', compile=False)
-            st.success("✅ Modelo Keras cargado exitosamente")
+        import json
+        
+        # Buscar archivos limpios primero
+        if os.path.exists('model_architecture_clean.json') and os.path.exists('model.weights.h5'):
+            st.info("Reconstruyendo modelo desde JSON limpio...")
+            
+            # Cargar la arquitectura limpia
+            with open('model_architecture_clean.json', 'r') as f:
+                model_json = f.read()
+            
+            # Reconstruir el modelo SIN problemas de compatibilidad
+            model = tf.keras.models.model_from_json(model_json)
+            
+            # Cargar los pesos
+            model.load_weights('model.weights.h5')
+            
+            st.success("✅ Modelo Keras cargado exitosamente desde archivos limpios")
             
             # Compilar el modelo
             model.compile(
@@ -152,10 +164,11 @@ def load_keras_model():
                 metrics=['accuracy']
             )
             return model
-            
-        elif os.path.exists('model.keras'):
-            st.info("Cargando modelo desde model.keras...")
-            model = tf.keras.models.load_model('model.keras', compile=False)
+        
+        # Si no encuentra los archivos limpios, buscar otros formatos
+        elif os.path.exists('keras_model.keras'):
+            st.info("Cargando modelo desde keras_model.keras...")
+            model = tf.keras.models.load_model('keras_model.keras', compile=False)
             st.success("✅ Modelo Keras cargado exitosamente")
             model.compile(
                 optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
@@ -174,25 +187,34 @@ def load_keras_model():
                 metrics=['accuracy']
             )
             return model
-            
+        
         else:
             st.error("""
-            ❌ No se encontró el archivo del modelo.
+            ❌ No se encontraron archivos del modelo.
             
             Archivos esperados:
-            - keras_model.keras (recomendado)
-            - model.keras
+            - model_architecture_clean.json + model.weights.h5 (recomendado)
+            - keras_model.keras
             - keras_model.h5
-            
-            Por favor, asegúrate de haber subido el archivo a tu repositorio.
             """)
             return None
             
     except Exception as e:
-        st.error(f"❌ Error cargando modelo: {str(e)}")
+        st.error(f"❌ Error detallado: {str(e)}")
         import traceback
         st.code(traceback.format_exc())
-        return None
+        
+        # Crear modelo dummy para que la app funcione
+        st.warning("⚠️ Creando modelo dummy para pruebas...")
+        dummy_model = tf.keras.Sequential([
+            tf.keras.layers.Dense(64, activation='relu', input_shape=(31,)),
+            tf.keras.layers.Dropout(0.3),
+            tf.keras.layers.Dense(32, activation='relu'),
+            tf.keras.layers.Dropout(0.3),
+            tf.keras.layers.Dense(1, activation='sigmoid')
+        ])
+        dummy_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        return dummy_model
 
 def load_sklearn_model():
     """Carga el modelo de Scikit-Learn con manejo de errores"""
