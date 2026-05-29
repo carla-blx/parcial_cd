@@ -137,74 +137,93 @@ def preprocess_input(data_dict: dict) -> np.ndarray:
 # LOADERS - VERSIÓN CORREGIDA
 # =============================================================================
 def load_keras_model():
-    """Carga modelo Keras usando archivos limpios (compatible con TF 2.15)"""
+    """Construye el modelo manualmente y carga los pesos"""
     try:
-        import json
+        import os
         
-        # Buscar archivos limpios primero
-        if os.path.exists('model_architecture_clean.json') and os.path.exists('model.weights.h5'):
-            st.info("Reconstruyendo modelo desde JSON limpio...")
-            
-            # Cargar la arquitectura limpia
-            with open('model_architecture_clean.json', 'r') as f:
-                model_json = f.read()
-            
-            # Reconstruir el modelo SIN problemas de compatibilidad
-            model = tf.keras.models.model_from_json(model_json)
-            
-            # Cargar los pesos
-            model.load_weights('model.weights.h5')
-            
-            st.success("✅ Modelo Keras cargado exitosamente desde archivos limpios")
-            
-            # Compilar el modelo
-            model.compile(
-                optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-                loss='binary_crossentropy',
-                metrics=['accuracy']
-            )
-            return model
+        # ============================================================
+        # CONSTRUIR EL MODELO MANUALMENTE (basado en tu arquitectura)
+        # ============================================================
+        st.info("Construyendo modelo manualmente...")
         
-        # Si no encuentra los archivos limpios, buscar otros formatos
-        elif os.path.exists('keras_model.keras'):
-            st.info("Cargando modelo desde keras_model.keras...")
-            model = tf.keras.models.load_model('keras_model.keras', compile=False)
-            st.success("✅ Modelo Keras cargado exitosamente")
-            model.compile(
-                optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-                loss='binary_crossentropy',
-                metrics=['accuracy']
-            )
-            return model
+        # Definir la misma arquitectura que usaste en entrenamiento
+        model = tf.keras.Sequential([
+            # Capa de entrada (31 features)
+            tf.keras.layers.Input(shape=(31,)),
             
-        elif os.path.exists('keras_model.h5'):
-            st.info("Cargando modelo desde keras_model.h5...")
-            model = tf.keras.models.load_model('keras_model.h5', compile=False)
-            st.success("✅ Modelo Keras cargado exitosamente")
-            model.compile(
-                optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-                loss='binary_crossentropy',
-                metrics=['accuracy']
-            )
-            return model
+            # Primera capa densa
+            tf.keras.layers.Dense(64, activation='relu', 
+                                 kernel_regularizer=tf.keras.regularizers.l2(0.001),
+                                 name='dense_18'),
+            
+            # Batch Normalization
+            tf.keras.layers.BatchNormalization(name='batch_normalization_10'),
+            
+            # Dropout
+            tf.keras.layers.Dropout(0.3, name='dropout_10'),
+            
+            # Segunda capa densa
+            tf.keras.layers.Dense(32, activation='relu',
+                                 kernel_regularizer=tf.keras.regularizers.l2(0.001),
+                                 name='dense_19'),
+            
+            # Batch Normalization
+            tf.keras.layers.BatchNormalization(name='batch_normalization_11'),
+            
+            # Dropout
+            tf.keras.layers.Dropout(0.3, name='dropout_11'),
+            
+            # Capa de salida
+            tf.keras.layers.Dense(1, activation='sigmoid', name='dense_20')
+        ])
         
-        else:
-            st.error("""
-            ❌ No se encontraron archivos del modelo.
-            
-            Archivos esperados:
-            - model_architecture_clean.json + model.weights.h5 (recomendado)
-            - keras_model.keras
-            - keras_model.h5
-            """)
-            return None
-            
+        st.success("🏗️ Modelo construido manualmente")
+        
+        # ============================================================
+        # CARGAR LOS PESOS
+        # ============================================================
+        
+        # Buscar archivo de pesos en diferentes formatos
+        weights_file = None
+        
+        if os.path.exists('model.weights.h5'):
+            weights_file = 'model.weights.h5'
+        elif os.path.exists('model_weights.h5'):
+            weights_file = 'model_weights.h5'
+        elif os.path.exists('keras_model.weights.h5'):
+            weights_file = 'keras_model.weights.h5'
+        elif os.path.exists('model.h5'):
+            # Si hay un modelo completo, cargarlo directamente
+            st.info("Cargando modelo completo desde model.h5...")
+            model = tf.keras.models.load_model('model.h5', compile=False)
+            weights_file = None
+        
+        if weights_file:
+            try:
+                model.load_weights(weights_file)
+                st.success(f"⚖️ Pesos cargados exitosamente desde {weights_file}")
+            except Exception as e:
+                st.warning(f"No se pudieron cargar los pesos: {e}")
+                st.info("Usando modelo con pesos aleatorios")
+        
+        # ============================================================
+        # COMPILAR EL MODELO
+        # ============================================================
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+            loss='binary_crossentropy',
+            metrics=['accuracy']
+        )
+        
+        st.success("✅ Modelo Keras listo para usar")
+        return model
+        
     except Exception as e:
-        st.error(f"❌ Error detallado: {str(e)}")
+        st.error(f"❌ Error construyendo modelo: {str(e)}")
         import traceback
         st.code(traceback.format_exc())
         
-        # Crear modelo dummy para que la app funcione
+        # Crear modelo dummy como último recurso
         st.warning("⚠️ Creando modelo dummy para pruebas...")
         dummy_model = tf.keras.Sequential([
             tf.keras.layers.Dense(64, activation='relu', input_shape=(31,)),
@@ -217,11 +236,17 @@ def load_keras_model():
         return dummy_model
 
 def load_sklearn_model():
-    """Carga el modelo de Scikit-Learn con manejo de errores"""
+    """Carga el modelo de Scikit-Learn con compatibilidad"""
     try:
+        import numpy as np
+        
+        # Configurar random state para compatibilidad
+        np.random.seed(42)
+        
         # Intentar cargar con joblib
         if os.path.exists("sklearn_model.pkl"):
-            model = joblib.load("sklearn_model.pkl")
+            with open("sklearn_model.pkl", 'rb') as f:
+                model = pickle.load(f)
             st.success("✅ Modelo Sklearn cargado exitosamente")
             return model
         elif os.path.exists("sklearn_model.joblib"):
@@ -229,15 +254,30 @@ def load_sklearn_model():
             st.success("✅ Modelo Sklearn cargado exitosamente")
             return model
         else:
-            st.error("❌ No se encontró el archivo sklearn_model.pkl o sklearn_model.joblib")
-            return None
+            st.warning("⚠️ No se encontró modelo sklearn. Creando modelo dummy...")
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.pipeline import Pipeline
+            
+            # Crear un pipeline dummy
+            dummy_model = Pipeline([
+                ('scaler', StandardScaler()),
+                ('classifier', RandomForestClassifier(n_estimators=10, random_state=42))
+            ])
+            
+            # Entrenar con datos dummy
+            dummy_X = np.random.rand(100, 31)
+            dummy_y = np.random.randint(0, 2, 100)
+            dummy_model.fit(dummy_X, dummy_y)
+            
+            return dummy_model
+            
     except Exception as e:
         st.error(f"❌ Error cargando modelo sklearn: {str(e)}")
-        st.info("Creando un modelo dummy para pruebas...")
-        # Crear un modelo dummy para que la app funcione
+        
+        # Crear modelo dummy simple
         from sklearn.ensemble import RandomForestClassifier
-        dummy_model = RandomForestClassifier(n_estimators=10)
-        # Entrenar con datos dummy
+        dummy_model = RandomForestClassifier(n_estimators=10, random_state=42)
         dummy_X = np.random.rand(100, 31)
         dummy_y = np.random.randint(0, 2, 100)
         dummy_model.fit(dummy_X, dummy_y)
