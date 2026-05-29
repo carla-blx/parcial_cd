@@ -24,60 +24,28 @@ def load_pipeline():
     try:
         import os
         
-        # Buscar el archivo del pipeline en diferentes ubicaciones
-        pipeline_files = [
-            'preprocessing_pipeline.pkl',
-            'pipeline.pkl',
-            'models/preprocessing_pipeline.pkl',
-            '../preprocessing_pipeline.pkl'
-        ]
-        
-        pipeline_file = None
-        for file in pipeline_files:
-            if os.path.exists(file):
-                pipeline_file = file
-                st.info(f"📂 Encontrado pipeline: {file}")
-                break
-        
-        if pipeline_file is None:
-            st.error("""
-            ❌ No se encontró el archivo del pipeline.
-            
-            Archivos esperados:
-            - preprocessing_pipeline.pkl
-            - pipeline.pkl
-            
-            Por favor, asegúrate de subir el archivo a tu repositorio.
-            """)
+        if not os.path.exists('preprocessing_pipeline.pkl'):
+            st.error("❌ No se encuentra preprocessing_pipeline.pkl")
             return None
         
-        # Cargar el pipeline
-        with open(pipeline_file, 'rb') as f:
-            pipeline_dict = pickle.load(f)
+        with open('preprocessing_pipeline.pkl', 'rb') as f:
+            config = pickle.load(f)
         
-        # Verificar que tiene las claves esperadas
-        expected_keys = ['preprocessing_pipeline', 'features_finales', 'num_cols', 'cat_cols']
-        for key in expected_keys:
-            if key not in pipeline_dict:
-                st.warning(f"⚠️ El pipeline no tiene la clave: {key}")
+        # Extraer componentes
+        PIPELINE = config['preprocessing_pipeline']
+        NUM_COLS = config['num_cols']
+        CAT_COLS = config['cat_cols']
+        FEATURES_FINALES = config['features_finales']
+        P01_RATIO = config.get('p01_ratio')
+        P99_RATIO = config.get('p99_ratio')
         
-        # Extraer el pipeline real
-        PIPELINE = pipeline_dict.get('preprocessing_pipeline')
+        # Guardar mapeos en variables globales
+        global EDUCATION_REMAP, MARRIAGE_REMAP
+        EDUCATION_REMAP = config.get('education_remap', {4: 4, 5: 4, 6: 4})
+        MARRIAGE_REMAP = config.get('marriage_remap', {0: 3})
         
-        # Guardar configuraciones
-        FEATURES_FINALES = pipeline_dict.get('features_finales', [])
-        NUM_COLS = pipeline_dict.get('num_cols', [])
-        CAT_COLS = pipeline_dict.get('cat_cols', [])
-        P01_RATIO = pipeline_dict.get('p01_ratio')
-        P99_RATIO = pipeline_dict.get('p99_ratio')
-        
-        if PIPELINE is None:
-            st.error("❌ El archivo no contiene un pipeline válido")
-            return None
-        
-        st.success(f"✅ Pipeline cargado correctamente")
-        st.info(f"📊 Features numéricas: {len(NUM_COLS)}")
-        st.info(f"📊 Features categóricas: {len(CAT_COLS)}")
+        st.success("✅ Pipeline cargado correctamente")
+        st.info(f"📊 Features finales: {len(FEATURES_FINALES)}")
         
         return PIPELINE
         
@@ -87,17 +55,35 @@ def load_pipeline():
         st.code(traceback.format_exc())
         return None
 
+def aplicar_mapeos_categoricos(df: pd.DataFrame) -> pd.DataFrame:
+    """Aplica los mapeos de educación y estado civil"""
+    df = df.copy()
+    
+    # Usar los mapeos cargados del pipeline
+    global EDUCATION_REMAP, MARRIAGE_REMAP
+    
+    if EDUCATION_REMAP:
+        df['EDUCATION'] = df['EDUCATION'].map(EDUCATION_REMAP).fillna(df['EDUCATION'])
+    
+    if MARRIAGE_REMAP:
+        df['MARRIAGE'] = df['MARRIAGE'].map(MARRIAGE_REMAP).fillna(df['MARRIAGE'])
+    
+    return df
+
 def crear_features_derivadas(df: pd.DataFrame) -> pd.DataFrame:
+    """Crea las 5 features derivadas exactamente como en el entrenamiento"""
     df = df.copy()
     
     PAY_COLS = ['PAY_1', 'PAY_2', 'PAY_3', 'PAY_4', 'PAY_5', 'PAY_6']
     BILL_COLS = ['BILL_AMT1', 'BILL_AMT2', 'BILL_AMT3', 'BILL_AMT4', 'BILL_AMT5', 'BILL_AMT6']
     PAY_AMT_COLS = ['PAY_AMT1', 'PAY_AMT2', 'PAY_AMT3', 'PAY_AMT4', 'PAY_AMT5', 'PAY_AMT6']
     
+    # ratio_pago
     total_pagado = df[PAY_AMT_COLS].sum(axis=1)
     total_facturado = df[BILL_COLS].abs().sum(axis=1)
     df['ratio_pago'] = total_pagado / (total_facturado + 1)
     
+    # Winsorización con percentiles del training
     if P01_RATIO is not None and P99_RATIO is not None:
         df['ratio_pago'] = df['ratio_pago'].clip(lower=P01_RATIO, upper=P99_RATIO)
     
