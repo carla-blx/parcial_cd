@@ -137,14 +137,15 @@ def preprocess_input(data_dict: dict) -> np.ndarray:
 # LOADERS - VERSIÓN CORREGIDA
 # =============================================================================
 def load_keras_model():
-    """Construye el modelo manualmente y carga los pesos"""
+    """Construye el modelo manualmente y carga los pesos (sin usar JSON)"""
     try:
         import os
+        
+        st.info("🏗️ Construyendo modelo manualmente...")
         
         # ============================================================
         # CONSTRUIR EL MODELO MANUALMENTE (basado en tu arquitectura)
         # ============================================================
-        st.info("Construyendo modelo manualmente...")
         
         # Definir la misma arquitectura que usaste en entrenamiento
         model = tf.keras.Sequential([
@@ -177,34 +178,29 @@ def load_keras_model():
             tf.keras.layers.Dense(1, activation='sigmoid', name='dense_20')
         ])
         
-        st.success("🏗️ Modelo construido manualmente")
+        st.success("✅ Modelo construido manualmente")
         
         # ============================================================
         # CARGAR LOS PESOS
         # ============================================================
         
-        # Buscar archivo de pesos en diferentes formatos
+        # Buscar archivo de pesos
         weights_file = None
-        
-        if os.path.exists('model.weights.h5'):
-            weights_file = 'model.weights.h5'
-        elif os.path.exists('model_weights.h5'):
-            weights_file = 'model_weights.h5'
-        elif os.path.exists('keras_model.weights.h5'):
-            weights_file = 'keras_model.weights.h5'
-        elif os.path.exists('model.h5'):
-            # Si hay un modelo completo, cargarlo directamente
-            st.info("Cargando modelo completo desde model.h5...")
-            model = tf.keras.models.load_model('model.h5', compile=False)
-            weights_file = None
+        for f in ['model.weights.h5', 'model_weights.h5', 'model_weights.weights.h5', 'keras_model.weights.h5']:
+            if os.path.exists(f):
+                weights_file = f
+                break
         
         if weights_file:
             try:
                 model.load_weights(weights_file)
-                st.success(f"⚖️ Pesos cargados exitosamente desde {weights_file}")
+                st.success(f"⚖️ Pesos cargados desde {weights_file}")
             except Exception as e:
                 st.warning(f"No se pudieron cargar los pesos: {e}")
                 st.info("Usando modelo con pesos aleatorios")
+        else:
+            st.warning("⚠️ No se encontró archivo de pesos. Usando pesos aleatorios.")
+            st.info("El modelo funcionará pero con menor precisión")
         
         # ============================================================
         # COMPILAR EL MODELO
@@ -219,11 +215,11 @@ def load_keras_model():
         return model
         
     except Exception as e:
-        st.error(f"❌ Error construyendo modelo: {str(e)}")
+        st.error(f"❌ Error: {str(e)}")
         import traceback
         st.code(traceback.format_exc())
         
-        # Crear modelo dummy como último recurso
+        # Crear modelo dummy
         st.warning("⚠️ Creando modelo dummy para pruebas...")
         dummy_model = tf.keras.Sequential([
             tf.keras.layers.Dense(64, activation='relu', input_shape=(31,)),
@@ -236,46 +232,54 @@ def load_keras_model():
         return dummy_model
 
 def load_sklearn_model():
-    """Carga el modelo de Scikit-Learn con compatibilidad"""
+    """Carga el modelo de Scikit-Learn"""
     try:
         import numpy as np
+        import os
         
-        # Configurar random state para compatibilidad
+        # Configurar para compatibilidad
         np.random.seed(42)
         
-        # Intentar cargar con joblib
-        if os.path.exists("sklearn_model.pkl"):
-            with open("sklearn_model.pkl", 'rb') as f:
-                model = pickle.load(f)
-            st.success("✅ Modelo Sklearn cargado exitosamente")
-            return model
-        elif os.path.exists("sklearn_model.joblib"):
-            model = joblib.load("sklearn_model.joblib")
-            st.success("✅ Modelo Sklearn cargado exitosamente")
-            return model
-        else:
-            st.warning("⚠️ No se encontró modelo sklearn. Creando modelo dummy...")
-            from sklearn.ensemble import RandomForestClassifier
-            from sklearn.preprocessing import StandardScaler
-            from sklearn.pipeline import Pipeline
-            
-            # Crear un pipeline dummy
-            dummy_model = Pipeline([
-                ('scaler', StandardScaler()),
-                ('classifier', RandomForestClassifier(n_estimators=10, random_state=42))
-            ])
-            
-            # Entrenar con datos dummy
-            dummy_X = np.random.rand(100, 31)
-            dummy_y = np.random.randint(0, 2, 100)
-            dummy_model.fit(dummy_X, dummy_y)
-            
-            return dummy_model
-            
-    except Exception as e:
-        st.error(f"❌ Error cargando modelo sklearn: {str(e)}")
+        # Buscar archivo de modelo sklearn
+        sklearn_files = ['sklearn_model.pkl', 'sklearn_model.joblib', 'model_sklearn.pkl']
         
-        # Crear modelo dummy simple
+        for file in sklearn_files:
+            if os.path.exists(file):
+                st.info(f"Cargando modelo sklearn desde {file}...")
+                try:
+                    if file.endswith('.joblib'):
+                        model = joblib.load(file)
+                    else:
+                        with open(file, 'rb') as f:
+                            model = pickle.load(f)
+                    st.success(f"✅ Modelo Sklearn cargado desde {file}")
+                    return model
+                except Exception as e:
+                    st.warning(f"Error cargando {file}: {e}")
+                    continue
+        
+        # Si no hay modelo, crear uno dummy
+        st.warning("⚠️ No se encontró modelo sklearn. Creando modelo dummy...")
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.pipeline import Pipeline
+        
+        dummy_model = Pipeline([
+            ('scaler', StandardScaler()),
+            ('classifier', RandomForestClassifier(n_estimators=10, random_state=42))
+        ])
+        
+        # Entrenar con datos dummy
+        dummy_X = np.random.rand(100, 31)
+        dummy_y = np.random.randint(0, 2, 100)
+        dummy_model.fit(dummy_X, dummy_y)
+        
+        st.info("📊 Modelo dummy creado (solo para pruebas)")
+        return dummy_model
+        
+    except Exception as e:
+        st.error(f"❌ Error: {str(e)}")
+        # Último recurso
         from sklearn.ensemble import RandomForestClassifier
         dummy_model = RandomForestClassifier(n_estimators=10, random_state=42)
         dummy_X = np.random.rand(100, 31)
